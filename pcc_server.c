@@ -35,11 +35,13 @@ int main(int argc, char *argv[]) {
     uint32_t N, count = 0;
 
     struct sockaddr_in serv_addr;
-    struct sockaddr_in my_addr;
     struct sockaddr_in peer_addr;
     socklen_t addrsize = sizeof(struct sockaddr_in);
 
-    uint32_t pcc_total[127] = {0};
+    uint32_t pcc_total[127] = {0}; // Our main pcc data struct
+    uint32_t pcc_temp[127] = {
+            0}; // Create a temporary data struct, so we can  update the pcc data structure only if the connection is completed without errors
+
     const int BUFFER_SIZE = 1024 * 1024; // max 1MB of data buffer size
     char file_data[BUFFER_SIZE];
 
@@ -50,7 +52,7 @@ int main(int argc, char *argv[]) {
     port = atoi(argv[1]);
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenfd < 0) {
-        perror("socket initialization failed!")
+        perror("socket initialization failed!");
         exit(1);
     }
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) { // Set the SO_REUSEADDR flag
@@ -75,7 +77,10 @@ int main(int argc, char *argv[]) {
 
     while (1) {
         if (recv_sig == 1) { // Check for a received SIGINT before we accept a new connection
-            print_and_exit(); // If we got a SIGINT and also yet to process a new request, close the server and print the count
+            for (int i = 32; i < 127; ++i) {
+                printf("char '%c' : %u times\n", i, pcc_total[i]);
+            }
+            exit(0); // If we got a SIGINT and also yet to process a new request, close the server and print the count
         }
         connfd = accept(listenfd, (struct sockaddr *) &peer_addr, &addrsize);
         if (connfd < 0) {
@@ -89,22 +94,21 @@ int main(int argc, char *argv[]) {
 //        char *n_buff = (char *) &temp; /* Here we will store the bytes we read for N (they are in network byte order)
 //                                          (read expects a char pointer) */
         while (sizeof(temp) - bytes_read_total > 0) { // Use a loop, so we can make sure all bytes were read
-            bytes_read = read(connfd, ((uint8_t *)&temp) + bytes_read_total, sizeof(temp) - bytes_read_total);
+            bytes_read = read(connfd, ((uint8_t * ) & temp) + bytes_read_total, sizeof(temp) - bytes_read_total);
 
-            if (bytes_read < 0){
-                if (errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE){ // If its one of these errors we do not close the server
+            if (bytes_read < 0) {
+                if (errno == ETIMEDOUT || errno == ECONNRESET ||
+                    errno == EPIPE) { // If its one of these errors we do not close the server
                     perror("Error occurred while reading N!, Server is still listening for new connections...");
                     close(connfd);
                     reset_flag = 1;
                     break;
-                }
-                else{ // Different error so we terminate the server
+                } else { // Different error so we terminate the server
                     perror("Error occurred while reading N!, Server is closing...");
                     close(connfd);
                     exit(1);
                 }
-            }
-            else if(bytes_read == 0){ // If a syscall return 0 it means the client connection terminated
+            } else if (bytes_read == 0) { // If a syscall return 0 it means the client connection terminated
                 perror("Error occurred while reading N!, Server is still listening for new connections...");
                 close(connfd);
                 reset_flag = 1;
@@ -114,63 +118,92 @@ int main(int argc, char *argv[]) {
             bytes_read_total += bytes_read;
         }
 
-        if (reset_flag == 1){
+        if (reset_flag == 1) {
             continue; // Means we got an error during reading N and closed the connection, so we want to accept a new one
         }
+        // Now we want to read the file data from the socket
         N = ntohl(temp);
         bytes_read = 0;
         bytes_read_total = 0;
         int bytes_to_read = 0;
-        while (bytes_read_total < N)
-        {
-            if (N - bytes_read_total > BUFFER_SIZE){ // Set the amount of bytes we want to read according to how many we have left
+        while (bytes_read_total < N) {
+            if (N - bytes_read_total > BUFFER_SIZE) { // Set the amount of bytes we want to read
                 bytes_to_read = BUFFER_SIZE;
-            }
-            else{
+            } else {
                 bytes_to_read = N - bytes_read_total;
             }
-            bytes_read = read(connfd, file_data, bytes_to_read);
-            if (bytes_read < 0){
-                if (errno == ETIMEDOUT || errno == ECONNRESET || errno == EPIPE){ // If its one of these errors we do not close the server
+            bytes_read = read(connfd, file_data, bytes_to_read); // Read them into our buffer file_data
+            if (bytes_read < 0) {
+                if (errno == ETIMEDOUT || errno == ECONNRESET ||
+                    errno == EPIPE) { // If its one of these errors we do not close the server
                     perror("Error occurred while reading file data!, Server is still listening for new connections...");
                     close(connfd);
                     reset_flag = 1;
                     break;
-                }
-                else{ // Different error so we terminate the server
+                } else { // Different error so we terminate the server
                     perror("Error occurred while reading file data!, Server is closing...");
                     close(connfd);
                     exit(1);
                 }
-            }
-            else if(bytes_read == 0){ // If a syscall return 0 it means the client connection terminated
+            } else if (bytes_read == 0) { // If a syscall return 0 it means the client connection terminated
                 perror("Error occurred while reading file data!, Server is still listening for new connections...");
                 close(connfd);
                 reset_flag = 1;
                 break;
             }
-            bytes_read_total =+ bytes_read;
+            bytes_read_total += bytes_read;
+
 
             for (int i = 0; i < bytes_read; ++i) { // Get how many printable chars and update the data structure
-                if (file_data[i] >= 32 && file_data[i] <= 126){
+                if (file_data[i] >= 32 && file_data[i] <= 126) {
                     count++;
-                    pcc_total[int(file_data[i])]++;
+                    pcc_temp[(int)file_data[i]]++;
                 }
             }
         }
-        if (reset_flag == 1){
-            continue; // Means we got an error during reading N and closed the connection, so we want to accept a new one
+        if (reset_flag == 1) {
+            continue;
+        }
+        // Lastly, send the count back to the client
+        int bytes_sent = 0;
+        int bytes_sent_total = 0;
+        uint32_t new_count = htonl(count);
+        while (sizeof(new_count) - bytes_sent_total > 0) {
+            bytes_sent = write(connfd, ((uint8_t * ) & new_count) + bytes_sent_total,
+                               sizeof(new_count) - bytes_sent_total);
+
+            if (bytes_sent < 0) {
+                if (errno == ETIMEDOUT || errno == ECONNRESET ||
+                    errno == EPIPE) { // If its one of these errors we do not close the server
+                    perror("Error occurred while sending count!, Server is still listening for new connections...");
+                    close(connfd);
+                    reset_flag = 1;
+                    break;
+                } else { // Different error so we terminate the server
+                    perror("Error occurred while sending count!, Server is closing...");
+                    close(connfd);
+                    exit(1);
+                }
+            } else if (bytes_sent == 0) { // If a syscall return 0 it means the client connection terminated
+                perror("Error occurred while sending count!, Server is still listening for new connections...");
+                close(connfd);
+                reset_flag = 1;
+                break;
+            }
+
+            bytes_sent_total += bytes_sent;
+        }
+        if (reset_flag == 1) {
+            continue;
         }
 
+        // Copy the added counts to the main data structure
+        for (int i = 32; i < 127; ++i) {
+            pcc_total[i] += pcc_temp[i]; // Add the count
+            pcc_temp[i] = 0; // Reset the temp structure for next connection
+        }
 
-
-        count =  0;
+        close(connfd);
+        count = 0;
     }
-}
-
-void print_and_exit() {
-    for (int i = 32; i < 127; ++i) {
-        printf("char '%c' : %u times\n", i, pcc_total[i]);
-    }
-    exit(0);
 }
