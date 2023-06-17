@@ -12,8 +12,6 @@
 #include <signal.h>
 
 
-void print_and_exit();
-
 static int recv_sig = 0; // flag for SIGINT, so we know when we received a signal
 
 void mySignalHandler(int signum) { recv_sig = 1; }
@@ -204,6 +202,6 @@ int main(int argc, char *argv[]) {
         }
 
         close(connfd);
-        count = 0;
+        count = 0; // Reset the count of printable chars
     }
 }
