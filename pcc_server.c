@@ -99,8 +99,8 @@ int main(int argc, char *argv[]) {
                     errno == EPIPE) { // If its one of these errors we do not close the server
                     perror("Error occurred while reading N!, Server is still listening for new connections...");
                     close(connfd);
-                    reset_flag = 1;
-                    break;
+                    reset_flag = 1; // Turn on the flag, so we can continue the outer loop and accept a new connection
+                    break; // Break out of current read loop
                 } else { // Different error so we terminate the server
                     perror("Error occurred while reading N!, Server is closing...");
                     close(connfd);
@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
         bytes_read_total = 0;
         int bytes_to_read = 0;
         while (bytes_read_total < N) {
-            if (N - bytes_read_total > BUFFER_SIZE) { // Set the amount of bytes we want to read
+            if (N - bytes_read_total > BUFFER_SIZE) { // Set the amount of bytes we want to read (max is 1MB each read)
                 bytes_to_read = BUFFER_SIZE;
             } else {
                 bytes_to_read = N - bytes_read_total;

@@ -39,22 +39,26 @@ int main(int argc, char *argv[]) {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("socket initialization failed!");
+        close(sockfd);
         exit(1);
     }
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) { // Set the SO_REUSEADDR flag
         perror("setsockopt(SO_REUSEADDR) failed!");
+        close(sockfd);
         exit(1);
     }
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(atoi(port));
-    int ret_pton = inet_pton(AF_INET, ip, &serv_addr.sin_adrr);
+    int ret_pton = inet_pton(AF_INET, ip, &serv_addr.sin_adrr); // Translate ip from string
     if (ret_pton <= 0) {
         perror("inet_pton error!");
+        close(sockfd);
         exit(1);
     }
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         perror("Error while connecting to socket!");
+        close(sockfd);
         exit(1);
     }
 
@@ -62,24 +66,49 @@ int main(int argc, char *argv[]) {
     if (N < 0){
         perror("Error in lseek!");
         close(fd);
+        close(sockfd);
         exit(1);
     }
     if(lseek(fd, 0, SEEK_SET) < 0){ // Return it to the start of the file, so we can read later
         perror("Error in lseek!");
         close(fd);
+        close(sockfd);
         exit(1);
     }
 
     int bytes_sent = 0, bytes_sent_total = 0;
     uint32_t temp_N = htonl(N);
-    while(sizeof(temp_N) - bytes_sent_total > 0){
+    while(sizeof(temp_N) - bytes_sent_total > 0){ // Send N to the server
         bytes_sent = write(sockfd, ((uint8_t*)&temp_N) + bytes_sent_total, sizeof(temp_N) - bytes_sent_total);
         if (bytes_sent <= 0){
             perror("Error sending N value");
             close(fd);
+            close(sockfd);
             exit(1);
         }
         bytes_sent_total += bytes_sent;
+    }
+    // Send the file data to the server
+    bytes_sent = 0;
+    int data_read = 0, total_data_read = 0, data_to_read = 0, bytes_to_send;
+    bytes_sent_total = 0;
+    while(N - total_data_read > 0){
+
+        if (N - total_data_read < BUFFER_SIZE){
+            data_to_read = N - total_data_read;
+        }
+        else{
+            data_to_read = BUFFER_SIZE;
+        }
+        data_read = read(fd, file_data + total_data_read, data_to_read);
+        if (data_read <= 0){
+            perror("Error reading from file!");
+            close(fd);
+            close(sockfd);
+            exit(1);
+        }
+
+
     }
 
 
