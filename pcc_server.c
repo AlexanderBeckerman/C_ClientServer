@@ -14,7 +14,7 @@
 
 static int recv_sig = 0; // flag for SIGINT, so we know when we received a signal
 
-void mySignalHandler(int signum) { recv_sig = 1; }
+void mySignalHandler(int signum) { recv_sig = 1; } // Turn on the flag, so we know not to accept a new connection
 
 
 int main(int argc, char *argv[]) {
@@ -87,13 +87,12 @@ int main(int argc, char *argv[]) {
         }
         int reset_flag = 0;
         // First we read the value of N
-        int bytes_read = 0, bytes_read_total = 0; // N size is 32bit * in network byte order *
-        uint32_t temp;
-//        char *n_buff = (char *) &temp; /* Here we will store the bytes we read for N (they are in network byte order)
-//                                          (read expects a char pointer) */
+        int bytes_read = 0, bytes_read_total = 0;
+        uint32_t temp; // N size is 32bit * in network byte order * so we use a temporary variable to store it in and later convert it
         while (sizeof(temp) - bytes_read_total > 0) { // Use a loop, so we can make sure all bytes were read
-            bytes_read = read(connfd, ((uint8_t * ) & temp) + bytes_read_total, sizeof(temp) - bytes_read_total);
 
+            // Convert the pointer to uint8, so we can read with granularity of 1 byte and make sure all bytes were read.
+            bytes_read = read(connfd, ((uint8_t * ) & temp) + bytes_read_total, sizeof(temp) - bytes_read_total);
             if (bytes_read < 0) {
                 if (errno == ETIMEDOUT || errno == ECONNRESET ||
                     errno == EPIPE) { // If its one of these errors we do not close the server
@@ -125,7 +124,7 @@ int main(int argc, char *argv[]) {
         bytes_read_total = 0;
         int bytes_to_read = 0;
         while (bytes_read_total < N) {
-            if (N - bytes_read_total > BUFFER_SIZE) { // Set the amount of bytes we want to read (max is 1MB each read)
+            if (N - bytes_read_total > BUFFER_SIZE) { // // Get the size we want to read into the buffer = MAX(BUFFER_SIZE, remaining data)
                 bytes_to_read = BUFFER_SIZE;
             } else {
                 bytes_to_read = N - bytes_read_total;
@@ -152,7 +151,7 @@ int main(int argc, char *argv[]) {
             bytes_read_total += bytes_read;
 
 
-            for (int i = 0; i < bytes_read; ++i) { // Get how many printable chars and update the data structure
+            for (int i = 0; i < bytes_read; ++i) { // Get how many printable chars and update the temporary data structure
                 if (file_data[i] >= 32 && file_data[i] <= 126) {
                     count++;
                     pcc_temp[(int)file_data[i]]++;
