@@ -30,7 +30,8 @@ int main(int argc, char *argv[]) {
     int connfd = -1;
 
     uint16_t port;
-    uint32_t N, count = 0;
+    uint32_t N;
+    uint32_t count = 0;
 
     struct sockaddr_in serv_addr;
     struct sockaddr_in peer_addr;
@@ -78,7 +79,11 @@ int main(int argc, char *argv[]) {
             for (int i = 32; i < 127; ++i) {
                 printf("char '%c' : %u times\n", i, pcc_total[i]);
             }
-            exit(0); // If we got a SIGINT and also yet to process a new request, close the server and print the count
+            if (close(listenfd) < 0){
+                perror("Error closing server socket!");
+                exit(1);
+            }
+            exit(0); // If we got a SIGINT and also yet to process a new request, close the server after printing the count
         }
         connfd = accept(listenfd, (struct sockaddr *) &peer_addr, &addrsize);
         if (connfd < 0) {
@@ -97,17 +102,22 @@ int main(int argc, char *argv[]) {
                 if (errno == ETIMEDOUT || errno == ECONNRESET ||
                     errno == EPIPE) { // If its one of these errors we do not close the server
                     perror("Error occurred while reading N!, Server is still listening for new connections...");
-                    close(connfd);
+                    if (close(connfd) < 0){
+                        perror("Error closing connection!");
+                        exit(1);
+                    }
                     reset_flag = 1; // Turn on the flag, so we can continue the outer loop and accept a new connection
                     break; // Break out of current read loop
                 } else { // Different error so we terminate the server
                     perror("Error occurred while reading N!, Server is closing...");
-                    close(connfd);
                     exit(1);
                 }
             } else if (bytes_read == 0) { // If a syscall return 0 it means the client connection terminated
                 perror("Error occurred while reading N!, Server is still listening for new connections...");
-                close(connfd);
+                if (close(connfd) < 0){
+                    perror("Error closing connection!");
+                    exit(1);
+                }
                 reset_flag = 1;
                 break;
             }
@@ -122,9 +132,9 @@ int main(int argc, char *argv[]) {
         N = ntohl(temp);
         bytes_read = 0;
         bytes_read_total = 0;
-        int bytes_to_read = 0;
+        int bytes_to_read = 0; // Use this, so we know how many bytes to fit into the buffer
         while (bytes_read_total < N) {
-            if (N - bytes_read_total > BUFFER_SIZE) { // // Get the size we want to read into the buffer = MAX(BUFFER_SIZE, remaining data)
+            if (N - bytes_read_total > BUFFER_SIZE) { //  Get the size we want to read into the buffer = MAX(BUFFER_SIZE, remaining data)
                 bytes_to_read = BUFFER_SIZE;
             } else {
                 bytes_to_read = N - bytes_read_total;
@@ -134,17 +144,22 @@ int main(int argc, char *argv[]) {
                 if (errno == ETIMEDOUT || errno == ECONNRESET ||
                     errno == EPIPE) { // If its one of these errors we do not close the server
                     perror("Error occurred while reading file data!, Server is still listening for new connections...");
-                    close(connfd);
+                    if (close(connfd) < 0){
+                        perror("Error closing connection!");
+                        exit(1);
+                    }
                     reset_flag = 1;
                     break;
                 } else { // Different error so we terminate the server
                     perror("Error occurred while reading file data!, Server is closing...");
-                    close(connfd);
                     exit(1);
                 }
             } else if (bytes_read == 0) { // If a syscall return 0 it means the client connection terminated
                 perror("Error occurred while reading file data!, Server is still listening for new connections...");
-                close(connfd);
+                if (close(connfd) < 0){
+                    perror("Error closing connection!");
+                    exit(1);
+                }
                 reset_flag = 1;
                 break;
             }
@@ -173,17 +188,22 @@ int main(int argc, char *argv[]) {
                 if (errno == ETIMEDOUT || errno == ECONNRESET ||
                     errno == EPIPE) { // If its one of these errors we do not close the server
                     perror("Error occurred while sending count!, Server is still listening for new connections...");
-                    close(connfd);
+                    if (close(connfd) < 0){
+                        perror("Error closing connection!");
+                        exit(1);
+                    }
                     reset_flag = 1;
                     break;
                 } else { // Different error so we terminate the server
                     perror("Error occurred while sending count!, Server is closing...");
-                    close(connfd);
                     exit(1);
                 }
             } else if (bytes_sent == 0) { // If a syscall return 0 it means the client connection terminated
                 perror("Error occurred while sending count!, Server is still listening for new connections...");
-                close(connfd);
+                if (close(connfd) < 0){
+                    perror("Error closing connection!");
+                    exit(1);
+                }
                 reset_flag = 1;
                 break;
             }
@@ -194,7 +214,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        // Copy the added counts to the main data structure
+        // Copy the added counts to the main data structure after the connection completed without errors
         for (int i = 32; i < 127; ++i) {
             pcc_total[i] += pcc_temp[i]; // Add the count
             pcc_temp[i] = 0; // Reset the temp structure for next connection

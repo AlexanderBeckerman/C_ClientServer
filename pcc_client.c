@@ -7,15 +7,16 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
 int main(int argc, char *argv[]) {
 
     struct sockaddr_in serv_addr;
-    struct sockaddr_in my_addr;
-    socklen_t addrsize = sizeof(struct sockaddr_in);
-    char *file_path, ip, port;
+    char *file_path;
+    char *ip;
+    char *port;
     int sockfd = -1;
     uint32_t N, count;
     const int BUFFER_SIZE = 1024 * 1024;
@@ -39,46 +40,41 @@ int main(int argc, char *argv[]) {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("socket initialization failed!");
-        close(sockfd);
         exit(1);
     }
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) { // Set the SO_REUSEADDR flag
-        perror("setsockopt(SO_REUSEADDR) failed!");
-        close(sockfd);
-        exit(1);
-    }
+
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(atoi(port));
-    int ret_pton = inet_pton(AF_INET, ip, &serv_addr.sin_adrr); // Translate ip from string
-    if (ret_pton <= 0) {
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) { // Set the SO_REUSEADDR flag
+        perror("setsockopt(SO_REUSEADDR) failed!");
+        exit(1);
+    }
+
+    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {// Translate ip from string and set it into serv_addr
         perror("inet_pton error!");
-        close(sockfd);
         exit(1);
     }
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         perror("Error while connecting to socket!");
-        close(sockfd);
         exit(1);
     }
 
     N = lseek(fd, 0, SEEK_END); // lseek returns the offset in bytes of the third arg which is the end of the file.
     if (N < 0) {
         perror("Error in lseek!");
-        close(fd);
-        close(sockfd);
         exit(1);
     }
     if (lseek(fd, 0, SEEK_SET) < 0) { // Return it to the start of the file, so we can read later
         perror("Error in lseek!");
-        close(fd);
-        close(sockfd);
         exit(1);
     }
 
     int bytes_sent = 0, bytes_sent_total = 0;
     uint32_t temp_N = htonl(N);
     while (sizeof(temp_N) - bytes_sent_total > 0) { // Send N to the server
+        // Convert the pointer to uint8, so we can read with granularity of 1 byte and make sure all bytes were read.
         bytes_sent = write(sockfd, ((uint8_t * ) & temp_N) + bytes_sent_total, sizeof(temp_N) - bytes_sent_total);
         if (bytes_sent <= 0) {
             perror("Error sending N value");
@@ -93,7 +89,7 @@ int main(int argc, char *argv[]) {
     int data_read = 0, total_data_read = 0, data_to_read = 0, bytes_to_send, bytes_sent_buffer = 0;
     bytes_sent_total = 0;
 
-    while (N - bytes_sent_total > 0) {
+    while (N - bytes_sent_total > 0) { // Keep sending until we write all the bytes
         if (N - total_data_read <
             BUFFER_SIZE) { // Get the size we want to read into the buffer = MAX(BUFFER_SIZE, remaining data)
             data_to_read = N - total_data_read;
@@ -106,28 +102,24 @@ int main(int argc, char *argv[]) {
             data_read = read(fd, file_data + total_data_read, data_to_read);
             if (data_read <= 0) {
                 perror("Error reading from file!");
-                close(fd);
-                close(sockfd);
                 exit(1);
             }
             data_to_read -= data_read;
             total_data_read += data_read;
         }
-        bytes_sent_buffer = 0;
+        bytes_sent_buffer = 0; // Amount of bytes that we sent from the current data inside the buffer
         bytes_sent = 0;
         while (bytes_to_send > 0) { // Loop to make sure all the data inside the buffer was sent to the server
             bytes_sent = write(sockfd, file_data + bytes_sent_buffer, bytes_to_send);
             if (bytes_sent <= 0) {
                 perror("Error sending file data!");
-                close(fd);
-                close(sockfd);
                 exit(1);
             }
             bytes_to_send -= bytes_sent;
             bytes_sent_buffer += bytes_sent;
         }
 
-        bytes_sent_total += bytes_sent_buffer;
+        bytes_sent_total += bytes_sent_buffer; // Update the total amount of bytes sent
 
     }
     // Read the count from the server
@@ -139,8 +131,6 @@ int main(int argc, char *argv[]) {
         bytes_read = read(sockfd, ((uint8_t * ) & temp) + bytes_read_total, sizeof(temp) - bytes_read_total);
         if (bytes_read <= 0) {
             perror("Error reading count from server!");
-            close(fd);
-            close(sockfd);
             exit(1);
         }
 
