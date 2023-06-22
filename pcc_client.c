@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
     while (N - bytes_sent_total > 0) { // Keep sending until we write all the bytes
         if (N - total_data_read <
-            BUFFER_SIZE) { // Get the size we want to read into the buffer = MAX(BUFFER_SIZE, remaining data)
+            BUFFER_SIZE) { // Get the size we want to read into the buffer = MIN(BUFFER_SIZE, remaining data)
             data_to_read = N - total_data_read;
         } else {
             data_to_read = BUFFER_SIZE;

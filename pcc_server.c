@@ -129,12 +129,12 @@ int main(int argc, char *argv[]) {
             continue; // Means we got an error during reading N and closed the connection, so we want to accept a new one
         }
         // Now we want to read the file data from the socket
-        N = ntohl(temp);
+        N = ntohl(temp); // Convert the N we got from network byte order
         bytes_read = 0;
         bytes_read_total = 0;
         int bytes_to_read = 0; // Use this, so we know how many bytes to fit into the buffer
         while (bytes_read_total < N) {
-            if (N - bytes_read_total > BUFFER_SIZE) { //  Get the size we want to read into the buffer = MAX(BUFFER_SIZE, remaining data)
+            if (N - bytes_read_total > BUFFER_SIZE) { //  Get the size we want to read into the buffer = MIN(BUFFER_SIZE, remaining data)
                 bytes_to_read = BUFFER_SIZE;
             } else {
                 bytes_to_read = N - bytes_read_total;
