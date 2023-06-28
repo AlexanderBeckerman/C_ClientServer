@@ -49,8 +49,8 @@ int main(int argc, char *argv[]) {
     socklen_t addrsize = sizeof(struct sockaddr_in);
 
 
-    uint32_t pcc_temp[127] = {
-            0}; // Create a temporary data struct, so we can  update the pcc data structure only if the connection is completed without errors
+    uint32_t pcc_curr[127] = {
+            0}; // Create a temporary data struct for current connection, so we can  update the pcc data structure only if the connection is completed without errors
 
     const int BUFFER_SIZE = 1024 * 1024; // max 1MB of data buffer size
     char file_data[BUFFER_SIZE];
@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
                  i < bytes_read; ++i) { // Get how many printable chars and update the temporary data structure
                 if (file_data[i] >= 32 && file_data[i] <= 126) {
                     count++;
-                    pcc_temp[(int) file_data[i]]++;
+                    pcc_curr[(int) file_data[i]]++;
                 }
             }
         }
@@ -172,6 +172,7 @@ int main(int argc, char *argv[]) {
         int bytes_sent_total = 0;
         uint32_t new_count = htonl(count);
         while (sizeof(new_count) - bytes_sent_total > 0) {
+            // Convert the pointer to uint8, so we can write with granularity of 1 byte and make sure all bytes were sent.
             bytes_sent = write(connfd, ((uint8_t * ) & new_count) + bytes_sent_total,
                                sizeof(new_count) - bytes_sent_total);
 
@@ -199,8 +200,8 @@ int main(int argc, char *argv[]) {
 
         // Copy the added counts to the main data structure after the connection completed without errors
         for (int i = 32; i < 127; ++i) {
-            pcc_total[i] += pcc_temp[i]; // Add the count
-            pcc_temp[i] = 0; // Reset the temp structure for next connection
+            pcc_total[i] += pcc_curr[i]; // Add the count
+            pcc_curr[i] = 0; // Reset the temp structure for next connection
         }
 
         close(connfd);
