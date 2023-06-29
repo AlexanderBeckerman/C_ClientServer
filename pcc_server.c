@@ -11,20 +11,15 @@
 #include <errno.h>
 #include <signal.h>
 
+
 void print_and_exit(void);
 
-static int recv_sig = 0; // Flag for knowing when we received a sigint and want to close the server
-static int connected = 0; // Flag for knowing if we have an active connection or not
+
 static uint32_t pcc_total[127] = {0}; // Our main pcc data struct
 
 void mySignalHandler(int signum) {
 
-    if (connected == 0) {
-        print_and_exit(); // If there is no active connection we want to close the server
-    } else // Else we turn on the flag, so we know not to accept a new connection
-    {
-        recv_sig = 1;
-    }
+    print_and_exit(); // When we get here it means we unblocked SIGINT and are not connected to a client
 }
 
 
@@ -32,7 +27,7 @@ int main(int argc, char *argv[]) {
 
     struct sigaction newAction = {.sa_handler = mySignalHandler,
             .sa_flags = SA_RESTART};
-    if (sigaction(SIGINT, &newAction, NULL) == -1) {
+    if (sigaction(SIGINT, &newAction, NULL) == -1) { // Create and initialize our SIGINT handler
         perror("Signal handle registration failed");
         exit(1);
     }
@@ -85,18 +80,22 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    sigset_t mask; // I will use this to block the SIGINT until we finish the connection
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+
     while (1) {
-        connected = 0; // Reset flag so we know there is no active connection
-        if (recv_sig == 1) {
-            print_and_exit(); // If we did receive a SIGINT and have yet to accept a new connection we print and exit
-        }
+
+        sigprocmask(SIG_UNBLOCK, &mask, NULL); // Unblock it here in case we restarted the loop without closing the server
         connfd = accept(listenfd, (struct sockaddr *) &peer_addr, &addrsize);
-        connected = 1; // If we returned from accept it means we accepted a client
+        sigprocmask(SIG_BLOCK, &mask, NULL); // If we got out from accept it means we are connected so we block SIGINT until we disconnect
+
         if (connfd < 0) {
             perror("accept failed!");
             exit(1);
         }
-        int reset_flag = 0;
+
+        int reset_flag = 0; // Flag for knowing when we want to continue to accept a new connection
         // First we read the value of N
         int bytes_read = 0, bytes_read_total = 0;
         uint32_t temp; // N size is 32bit * in network byte order * so we use a temporary variable to store it in and later convert it
@@ -204,7 +203,11 @@ int main(int argc, char *argv[]) {
             pcc_curr[i] = 0; // Reset the temp structure for next connection
         }
 
-        close(connfd);
+        if(close(connfd) < 0){
+            perror("Error closing connection!");
+            exit(1);
+        }
+        sigprocmask(SIG_UNBLOCK, &mask, NULL); // We finished the connection so we unblock SIGINT
         count = 0; // Reset the count of printable chars
     }
 }
